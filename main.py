@@ -1,109 +1,297 @@
-from fastapi import FastAPI
+# =========================================================
+# IMPORTS
+# =========================================================
+
+# FastAPI imports
+from fastapi import FastAPI, Depends, HTTPException
+
+# Pydantic model for request validation
 from pydantic import BaseModel
 
+# SQLAlchemy database imports
+from sqlalchemy import create_engine, Column, Integer, String
+
+# SQLAlchemy ORM imports
+from sqlalchemy.orm import sessionmaker, declarative_base, Session
+
+
+# =========================================================
+# CREATE FASTAPI APP
+# =========================================================
+
 app = FastAPI()
-    
-#home route
-# @app.get("/")
-# def home():
-#     return {"message": "Hello, World!"}
 
-#about route
-# @app.get("/about")
-# def about():
-#     return {"message": "This is a simple FastAPI application."}
 
-#users route
-# @app.get("/users")
-# def users():
-#     return [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
+# =========================================================
+# DATABASE CONFIGURATION
+# =========================================================
 
-#get by id route
-# @app.get("/users/{user_id}")
-# def get_user(user_id: int):
-#     return {"id": user_id, "name": f"User {user_id}"}
+# SQLite database path
+DATABASE_URL = "sqlite:///./student.db"
 
-#query params
-# @app.get("/users1")
-# def get_user(name: str = None):
-#     return {"name": name}
+# Create database engine
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False}
+)
 
-# @app.post("/create-user")
-# def create_user(name: str, age: int): it's like query paramas
-#     return {"name": name, "age": age}
+# Create database session
+sessionLocal = sessionmaker(bind=engine)
 
-# def create_user(user: dict):
-#     return {
-#         "message": "User created successfully",
-#         "data": user
-#     }
+# Base class for database models
+Base = declarative_base()
 
-# schema for user with nested schema
-# class Address(BaseModel):
-#     city: str
-#     state: str
-    
-# class User(BaseModel):
-#     name: str
-#     age: int
-#     address: Address
 
-# @app.post("/create-user")
-# def create_user(user: User):
-#     return {
-#         "message": "User created successfully",
-#         "data": user
-#     }
+# =========================================================
+# PYDANTIC MODEL
+# =========================================================
 
-#CRUD operations with in-memory storage
+# Used for request body validation
+class StudentCreate(BaseModel):
 
-todos = []
+    sname: str
+    sage: int
+    semail: str
 
-class Todo(BaseModel):
-    id: int
-    title: str
-    completed: bool
-    
-@app.post("/todos")
-def create_todo(todo: Todo):
-    todos.append(todo)
+
+# =========================================================
+# SQLALCHEMY MODEL
+# =========================================================
+
+# Database table model
+class Student(Base):
+
+    # Table name
+    __tablename__ = "student"
+
+    # Student ID
+    sid = Column(Integer, primary_key=True, index=True)
+
+    # Student Name
+    sname = Column(String)
+
+    # Student Age
+    sage = Column(Integer)
+
+    # Student Email
+    semail = Column(String)
+
+
+# =========================================================
+# CREATE DATABASE TABLE
+# =========================================================
+
+Base.metadata.create_all(bind=engine)
+
+
+# =========================================================
+# DATABASE CONNECTION DEPENDENCY
+# =========================================================
+
+def get_db():
+
+    # Create database session
+    db = sessionLocal()
+
+    try:
+
+        # Send database session
+        yield db
+
+    finally:
+
+        # Close database session
+        db.close()
+
+
+# =========================================================
+# HOME API
+# =========================================================
+
+@app.get("/", tags=["Student"])
+def home():
+
     return {
-        "message": "Todo created successfully",
-        "data": todo
+        "message": "Student Database Connected Successfully"
     }
 
-@app.get("/todos")
-def get_todos():
+
+# =========================================================
+# CREATE STUDENT API
+# =========================================================
+
+@app.post("/student", tags=["Student"])
+def create_student(
+
+    # Request body
+    student: StudentCreate,
+
+    # Database session
+    db: Session = Depends(get_db)
+):
+
+    # Create SQLAlchemy object
+    new_student = Student(
+
+        sname=student.sname,
+        sage=student.sage,
+        semail=student.semail
+    )
+
+    # Add into database
+    db.add(new_student)
+
+    # Save changes
+    db.commit()
+
+    # Refresh latest data
+    db.refresh(new_student)
+
     return {
-        "message": "Todos retrieved successfully",
-        "data": todos
+        "message": "Student Created Successfully",
+        "data": {
+            "sid": new_student.sid,
+            "sname": new_student.sname,
+            "sage": new_student.sage,
+            "semail": new_student.semail
+        }
     }
-    
-@app.get("/todos/{todo_id}")
-def get_todo(todo_id: int):
-    for todo in todos:
-        if todo.id == todo_id:
-            return {
-                "message": "Todo retrieved successfully",
-                "data": todo
-            }
-    return {"message": "Todo not found"}
 
-@app.put("/todos/{todo_id}")
-def update_todo(todo_id: int, update_todo: Todo):
-    for i, t in enumerate(todos):
-        if t.id == todo_id:
-            todos[i] = update_todo
-            return {
-                "message": "Todo updated successfully",
-                "data": update_todo
-            }
-    return {"message": "Todo not found"}
 
-@app.delete("/todos/{todo_id}")
-def delete_todo(todo_id: int):
-    for i, t in enumerate(todos):
-        if t.id == todo_id:
-            del todos[i]
-            return {"message": "Todo deleted successfully"}
-    return {"message": "Todo not found"}
+# =========================================================
+# GET ALL STUDENTS API
+# =========================================================
+
+@app.get("/student", tags=["Student"])
+def get_students(
+
+    db: Session = Depends(get_db)
+):
+
+    # Fetch all students
+    students = db.query(Student).all()
+
+    return {
+        "message": "Students Retrieved Successfully",
+        "total_students": len(students),
+        "data": students
+    }
+
+
+# =========================================================
+# GET STUDENT BY ID API
+# =========================================================
+
+@app.get("/student/{sid}", tags=["Student"])
+def get_student_by_id(
+
+    sid: int,
+
+    db: Session = Depends(get_db)
+):
+
+    # Find student by ID
+    student = db.query(Student).filter(
+        Student.sid == sid
+    ).first()
+
+    # Check student exists or not
+    if not student:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student Not Found"
+        )
+
+    return {
+        "message": "Student Found Successfully",
+        "data": student
+    }
+
+
+# =========================================================
+# DELETE STUDENT API
+# =========================================================
+
+@app.delete("/student/{sid}", tags=["Student"])
+def delete_student(
+
+    sid: int,
+
+    db: Session = Depends(get_db)
+):
+
+    # Find student by ID
+    student = db.query(Student).filter(
+        Student.sid == sid
+    ).first()
+
+    # Check student exists or not
+    if not student:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student Not Found"
+        )
+
+    # Delete student
+    db.delete(student)
+
+    # Save changes
+    db.commit()
+
+    return {
+        "message": "Student Deleted Successfully"
+    }
+
+
+# =========================================================
+# UPDATE STUDENT API
+# =========================================================
+
+@app.put("/student/{sid}", tags=["Student"])
+def update_student(
+
+    sid: int,
+
+    # Request body
+    student: StudentCreate,
+
+    # Database session
+    db: Session = Depends(get_db)
+):
+
+    # Find existing student
+    old_student = db.query(Student).filter(
+        Student.sid == sid
+    ).first()
+
+    # Check student exists or not
+    if not old_student:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student Not Found"
+        )
+
+    # Update student data
+    old_student.sname = student.sname
+    old_student.sage = student.sage
+    old_student.semail = student.semail
+
+    # Save updated changes
+    db.commit()
+
+    # Refresh latest data
+    db.refresh(old_student)
+
+    return {
+        "message": "Student Updated Successfully",
+        "data": {
+            "sid": old_student.sid,
+            "sname": old_student.sname,
+            "sage": old_student.sage,
+            "semail": old_student.semail
+        }
+    }
+
